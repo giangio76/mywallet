@@ -1,20 +1,20 @@
 {
-  "updated": "2026-06-11T09:08:02Z",
+  "updated": "2026-06-11T11:16:29Z",
   "currency": "EUR",
   "prices": {
-    "IE00B4L5Y983": 121.16,
-    "IE00BMG6Z448": 7.874,
-    "IE00BJ5JPG56": 4.753,
-    "IE00BDVPNG13": 102.03,
-    "IE000X59ZHE2": 9.319,
-    "IE000U58J0M1": 8.65
+    "IE00B4L5Y983": 121.17,
+    "IE00BMG6Z448": 7.87,
+    "IE00BJ5JPG56": 4.76,
+    "IE00BDVPNG13": 101.78,
+    "IE000X59ZHE2": 9.31,
+    "IE000U58J0M1": 25.69
   },
   "source": {
-    "IE00B4L5Y983": "SWDA.MI",
-    "IE00BMG6Z448": "84X0.DE",
-    "IE00BJ5JPG56": "ICGA.DE",
-    "IE00BDVPNG13": "WTAI.MI",
-    "IE000X59ZHE2": "AINF.MI",
-    "IE000U58J0M1": "INRA.F"
+    "IE00B4L5Y983": "justETF",
+    "IE00BMG6Z448": "justETF",
+    "IE00BJ5JPG56": "justETF",
+    "IE00BDVPNG13": "justETF",
+    "IE000X59ZHE2": "justETF",
+    "IE000U58J0M1": "justETF"
   }
 }
