@@ -3,15 +3,16 @@
 MyWallet - aggiornamento prezzi ETF + storico.
 
 Gira come GitHub Action (vedi .github/workflows/prezzi.yml).
-- Scarica le ultime quotazioni in EURO da Yahoo Finance (da Python NON c'e' il
-  problema CORS del browser) e scrive prezzi.json.
-- Mantiene uno storico giornaliero dei prezzi in storico.json. Alla prima
-  esecuzione (storico corto) fa un backfill di ~6 mesi da Yahoo, cosi' il
-  grafico dell'app e' subito pieno. L'app ricostruisce il valore del
-  portafoglio nel tempo usando le quote dell'utente.
+- Fonte primaria: justETF (endpoint quote per ISIN, prezzo gettex in EURO,
+  lo stesso listino su cui opera Trade Republic -> i prezzi combaciano).
+- Riserva: Yahoo Finance, se justETF non risponde.
+- Da Python NON c'e' il problema CORS del browser.
+- Mantiene uno storico giornaliero in storico.json; alla prima esecuzione fa
+  un backfill di ~6 mesi (da Yahoo) cosi' il grafico e' subito pieno.
 """
 
 import json
+import re
 import sys
 import time
 from datetime import datetime, timezone
@@ -22,15 +23,11 @@ import requests
 HERE = Path(__file__).parent
 OUT_PREZZI = HERE / "prezzi.json"
 OUT_STORICO = HERE / "storico.json"
-MAX_DAYS = 800            # quanti giorni di storico tenere
-BACKFILL_RANGE = "6mo"    # quanto backfillare alla prima esecuzione
+MAX_DAYS = 800
+BACKFILL_RANGE = "6mo"
 
-HEADERS = {
-    "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                   "AppleWebKit/537.36 (KHTML, like Gecko) "
-                   "Chrome/124.0 Safari/537.36"),
-    "Accept": "application/json",
-}
+UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+      "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
 
 ETFS = [
     {"isin": "IE00B4L5Y983", "name": "iShares Core MSCI World",
@@ -44,16 +41,69 @@ ETFS = [
     {"isin": "IE000X59ZHE2", "name": "iShares AI Infrastructure",
      "syms": ["AINF.MI", "AINF.DE", "AINF.F"], "bounds": (3, 35)},
     {"isin": "IE000U58J0M1", "name": "iShares Global Clean Energy Transition",
-     "syms": ["INRA.AS", "INRA.DE", "INRA.F"], "bounds": (8, 60)},
+     "syms": ["INRA.AS", "INRE.PA", "INRA.F"], "bounds": (12, 45)},
 ]
 
 
+# ---------------------------------------------------------------- justETF
+def justetf_price(isin, session):
+    """Prezzo gettex in EUR da justETF, oppure None."""
+    base = "https://www.justetf.com"
+    url = f"{base}/api/etfs/{isin}/quote?locale=en&currency=EUR&isin={isin}"
+    headers = {
+        "User-Agent": UA,
+        "Accept": "application/json, text/plain, */*",
+        "Referer": f"{base}/en/etf-profile.html?isin={isin}",
+        "X-Requested-With": "XMLHttpRequest",
+    }
+    try:
+        r = session.get(url, headers=headers, timeout=12)
+        if r.status_code != 200:
+            return None
+        j = r.json()
+        cur = (j.get("currency") or "EUR").upper()
+        # la risposta puo' avere forme diverse: provo i campi piu' comuni
+        cand = None
+        candidates = [
+            ("last",), ("latestQuote", "raw"), ("quote", "raw"),
+            ("latestQuote",), ("mid",), ("bid",), ("price",),
+        ]
+        for path in candidates:
+            v = j
+            ok = True
+            for k in path:
+                if isinstance(v, dict) and k in v:
+                    v = v[k]
+                else:
+                    ok = False
+                    break
+            if ok and isinstance(v, (int, float)):
+                cand = float(v)
+                break
+            if ok and isinstance(v, str):
+                try:
+                    cand = float(v.replace(",", "."))
+                    break
+                except ValueError:
+                    pass
+        if cand is None:  # ultima spiaggia: regex sul testo
+            m = re.search(r'"(?:last|raw|price|mid)"\s*:\s*"?([0-9]+[.,][0-9]+)"?', r.text)
+            if m:
+                cand = float(m.group(1).replace(",", "."))
+        if cand and cur == "EUR":
+            return round(cand, 4)
+    except Exception:
+        return None
+    return None
+
+
+# ---------------------------------------------------------------- Yahoo
 def _chart(symbol, rng):
     for host in ("query1", "query2"):
         url = (f"https://{host}.finance.yahoo.com/v8/finance/chart/"
                f"{symbol}?interval=1d&range={rng}")
         try:
-            r = requests.get(url, headers=HEADERS, timeout=15)
+            r = requests.get(url, headers={"User-Agent": UA}, timeout=15)
             if r.status_code != 200:
                 continue
             return r.json()["chart"]["result"][0]
@@ -92,6 +142,7 @@ def yahoo_history(symbol):
     return out or None
 
 
+# ---------------------------------------------------------------- utils
 def load_json(path, default):
     if path.exists():
         try:
@@ -101,17 +152,8 @@ def load_json(path, default):
     return default
 
 
-def best_symbol(etf, source):
-    """Prova prima il simbolo gia' usato per il prezzo, poi gli altri."""
-    pref = source.get(etf["isin"])
-    syms = ([pref] if pref and pref not in ("seed", "") else []) + \
-           [s for s in etf["syms"] if s != pref]
-    return syms
-
-
 def backfill():
-    """Costruisce lo storico ~6 mesi (lista {date, prices})."""
-    print("Backfill storico ~6 mesi...")
+    print("Backfill storico ~6 mesi (Yahoo)...")
     maps, alldates = {}, set()
     for e in ETFS:
         lo, hi = e["bounds"]
@@ -131,28 +173,44 @@ def backfill():
             if d in maps[e["isin"]]:
                 last[e["isin"]] = maps[e["isin"]][d]
         if any(v is None for v in last.values()):
-            continue   # salta i primi giorni finche' non ho tutti gli ETF
+            continue
         history.append({"date": d, "prices": {k: last[k] for k in last}})
     return history
 
 
+# ---------------------------------------------------------------- main
 def main():
     prev = load_json(OUT_PREZZI, {"prices": {}, "source": {}})
     storico = load_json(OUT_STORICO, {"history": []})
     history = storico.get("history", [])
 
-    # --- prezzi correnti ---
+    # sessione justETF (un GET iniziale per i cookie)
+    session = requests.Session()
+    try:
+        session.get("https://www.justetf.com/en/", headers={"User-Agent": UA}, timeout=12)
+    except Exception:
+        pass
+
     prices, source = {}, {}
     ok = kept = 0
     for e in ETFS:
         lo, hi = e["bounds"]
         got = None
-        for sym in e["syms"]:
-            p = yahoo_last(sym)
-            if p and lo <= p <= hi:
-                got = (round(p, 4), sym)
-                break
-            time.sleep(0.3)
+
+        # 1) justETF (gettex, EUR)
+        p = justetf_price(e["isin"], session)
+        if p and lo <= p <= hi:
+            got = (round(p, 4), "justETF")
+
+        # 2) Yahoo come riserva
+        if not got:
+            for sym in e["syms"]:
+                yp = yahoo_last(sym)
+                if yp and lo <= yp <= hi:
+                    got = (round(yp, 4), sym)
+                    break
+                time.sleep(0.3)
+
         if got:
             prices[e["isin"]], source[e["isin"]] = got
             ok += 1
@@ -166,13 +224,13 @@ def main():
                 print(f"  --  {e['name']:<40} {old:>9} EUR (precedente)")
             else:
                 print(f"  XX  {e['name']:<40}   nessun prezzo")
+        time.sleep(0.2)
 
     OUT_PREZZI.write_text(json.dumps(
         {"updated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
          "currency": "EUR", "prices": prices, "source": source},
         ensure_ascii=False, indent=2), encoding="utf-8")
 
-    # --- storico: backfill alla prima esecuzione, poi append giornaliero ---
     if len(history) < 20:
         bf = backfill()
         if bf:
@@ -190,7 +248,7 @@ def main():
         {"updated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
          "history": history}, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    print(f"\nprezzi: {ok} live, {kept} mantenuti · storico: {len(history)} giorni")
+    print(f"\nprezzi: {ok} ok, {kept} mantenuti · storico: {len(history)} giorni")
     return 0
 
 
