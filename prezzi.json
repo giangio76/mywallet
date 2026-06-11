@@ -1,0 +1,20 @@
+{
+  "updated": "2026-06-11T08:00:00Z",
+  "currency": "EUR",
+  "prices": {
+    "IE00B4L5Y983": 121.53,
+    "IE00BMG6Z448": 6.64,
+    "IE00BJ5JPG56": 5.5,
+    "IE00BDVPNG13": 102.0,
+    "IE000X59ZHE2": 8.27,
+    "IE000U58J0M1": 29.46
+  },
+  "source": {
+    "IE00B4L5Y983": "seed",
+    "IE00BMG6Z448": "seed",
+    "IE00BJ5JPG56": "seed",
+    "IE00BDVPNG13": "seed",
+    "IE000X59ZHE2": "seed",
+    "IE000U58J0M1": "seed"
+  }
+}
