@@ -1,13 +1,13 @@
 {
-  "updated": "2026-10-01T18:44:48Z",
+  "updated": "2026-10-02T12:12:15Z",
   "currency": "EUR",
   "prices": {
-    "IE00B4L5Y983": 128.58,
-    "IE00BMG6Z448": 8.34,
-    "IE00BJ5JPG56": 4.76,
-    "IE00BDVPNG13": 109.6,
-    "IE000X59ZHE2": 10.42,
-    "IE000U58J0M1": 21.9
+    "IE00B4L5Y983": 130.05,
+    "IE00BMG6Z448": 8.51,
+    "IE00BJ5JPG56": 4.69,
+    "IE00BDVPNG13": 111.78,
+    "IE000X59ZHE2": 10.65,
+    "IE000U58J0M1": 22.32
   },
   "source": {
     "IE00B4L5Y983": "justETF",
